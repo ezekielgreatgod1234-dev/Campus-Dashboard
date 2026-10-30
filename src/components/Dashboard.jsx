@@ -23,8 +23,8 @@ import {
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-// NOTE: change "token" if your login code saves the JWT under a different localStorage key
-const getToken = () => localStorage.getItem("token");
+// Your login saves the JWT under the key "campusmart_token"
+const getToken = () => localStorage.getItem("campusmart_token");
 
 const authFetch = (path, options = {}) =>
   fetch(`${API_URL}${path}`, {
