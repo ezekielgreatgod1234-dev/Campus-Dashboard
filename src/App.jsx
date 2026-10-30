@@ -15,17 +15,12 @@ import Login from "./components/Login";
 import Register from "./components/Register";
 import Dashboard from "./components/Dashboard";
 
-// -----------------------------------------------------------------
-// Route-level wrappers. These connect the plain, prop-driven
-// Login / Register / Dashboard components to AuthContext + routing,
-// without needing to change anything inside those components.
-// -----------------------------------------------------------------
 
 function LoginRoute() {
   const { login, loading, error, clearError } = useAuth();
   const navigate = useNavigate();
 
-  // Clear any leftover error (e.g. from Register) when this page mounts.
+
   useEffect(() => {
     clearError();
   }, [clearError]);
@@ -56,9 +51,7 @@ function RegisterRoute() {
   }, [clearError]);
 
   const handleRegister = async (payload) => {
-    // Register.jsx calls onRegister({ error: "..." }) for client-side
-    // validation failures (password too short / doesn't match) — those
-    // never hit the backend, just surface the message.
+    
     if (payload?.error) {
       setError(payload.error);
       return;

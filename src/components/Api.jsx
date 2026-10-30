@@ -1,7 +1,4 @@
-// Base URL of your Express backend. Set VITE_API_BASE_URL in a .env
-// file at the frontend project root to point this somewhere else
-// (e.g. your deployed backend URL) — this falls back to the local
-// dev server on port 5000, matching backend/index.js's default PORT.
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 let authToken = null;
