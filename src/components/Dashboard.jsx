@@ -19,9 +19,15 @@ import {
   FiEdit2,
   FiCheckCircle,
   FiSave,
+  FiDownload,
+  FiCompass,
 } from "react-icons/fi";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:5000";
+const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
 
 // Your login saves the JWT under the key "campusmart_token"
 const getToken = () => localStorage.getItem("campusmart_token");
@@ -48,8 +54,9 @@ const api = async (path, options = {}) => {
 
 /* ------------------------------------------------------------------ */
 /* Preview image: no right-click menu, no dragging. This is a deterrent */
-/* only - the real protection is that the server only ever sends a     */
-/* low-res watermarked preview. The full-res original needs payment.   */
+/* only - the real protection is that the browser only ever receives a */
+/* low-res watermarked preview. The full-res original is sent once,    */
+/* after payment, through the server.                                  */
 /* ------------------------------------------------------------------ */
 function ProtectedImage({ src, alt }) {
   return (
@@ -115,9 +122,17 @@ export default function Dashboard({ user, onLogout }) {
   const [submitting, setSubmitting] = useState(false);
 
   // Data from the backend
-  const [artworks, setArtworks] = useState([]);
+  const [artworks, setArtworks] = useState([]); // artworks I posted
+  const [marketplace, setMarketplace] = useState([]); // artworks by other users
+  const [purchases, setPurchases] = useState([]); // everything I've paid for
+  const [sales, setSales] = useState([]); // my artworks others bought
   const [loading, setLoading] = useState(true);
-  const [sales] = useState([]); // payments / sales come later
+
+  // Buying / downloading
+  const [verifyingId, setVerifyingId] = useState(null);
+  const [dialogPurchaseId, setDialogPurchaseId] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadNotice, setDownloadNotice] = useState("");
 
   // Profile editable state
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -133,8 +148,16 @@ export default function Dashboard({ user, onLogout }) {
   /* ----------------------------- Loading ----------------------------- */
   const loadAll = async () => {
     try {
-      const mine = await api("/artworks/mine");
+      const [mine, market, bought, sold] = await Promise.all([
+        api("/artworks/mine"),
+        api("/artworks"),
+        api("/purchases/mine"),
+        api("/purchases/sales"),
+      ]);
       setArtworks(mine.artworks);
+      setMarketplace(market.artworks);
+      setPurchases(bought.purchases);
+      setSales(sold.sales);
     } catch (err) {
       console.log(err);
       if (err.status === 401) onLogout(); // token expired / invalid
@@ -143,10 +166,20 @@ export default function Dashboard({ user, onLogout }) {
     }
   };
 
-  // Runs on every page load / refresh so everything you added is still there
+  // Runs on every page load / refresh so everything is still there
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load the Paystack popup script once (so you don't have to edit index.html)
+  useEffect(() => {
+    if (document.getElementById("paystack-inline-js")) return;
+    const script = document.createElement("script");
+    script.id = "paystack-inline-js";
+    script.src = "https://js.paystack.co/v1/inline.js";
+    script.async = true;
+    document.body.appendChild(script);
   }, []);
 
   /* ----------------------------- Search ------------------------------ */
@@ -160,12 +193,17 @@ export default function Dashboard({ user, onLogout }) {
   };
 
   const filteredArtworks = artworks.filter(matchesSearch);
+  const filteredMarketplace = marketplace.filter(matchesSearch);
+  const filteredPurchases = purchases.filter(matchesSearch);
 
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchQuery(value);
-    if (value.trim().length > 0) {
-      setActiveTab("artworks");
+    if (
+      value.trim().length > 0 &&
+      !["artworks", "marketplace", "purchases"].includes(activeTab)
+    ) {
+      setActiveTab("marketplace");
     }
   };
 
@@ -245,6 +283,106 @@ export default function Dashboard({ user, onLogout }) {
     setIsEditingProfile(false);
   };
 
+  /* ----------------------------- Payment ----------------------------- */
+  // After the Paystack popup succeeds we ask the backend to verify the payment.
+  // Only then is the purchase created and the download dialog opened.
+  const confirmPurchase = async (artwork, reference) => {
+    try {
+      setVerifyingId(artwork.id);
+      const data = await api("/purchases/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artworkId: artwork.id, reference }),
+      });
+      await loadAll();
+      setDownloadNotice("");
+      setDialogPurchaseId(data.purchaseId);
+    } catch (err) {
+      alert(`${err.message}\nPayment reference: ${reference}`);
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
+  const payWithPaystack = (artwork) => {
+    if (!PAYSTACK_PUBLIC_KEY) {
+      alert("VITE_PAYSTACK_PUBLIC_KEY is missing in your frontend .env");
+      return;
+    }
+    if (!window.PaystackPop) {
+      alert("Payment library is still loading. Please try again in a moment.");
+      return;
+    }
+
+    const handler = window.PaystackPop.setup({
+      key: PAYSTACK_PUBLIC_KEY,
+      email: profileData.email,
+      amount: artwork.price * 100, // Paystack uses kobo
+      currency: "NGN",
+      ref: "ARTVAULT_" + Date.now() + "_" + Math.floor(Math.random() * 1000000),
+      metadata: { artworkId: artwork.id },
+      callback: function (response) {
+        confirmPurchase(artwork, response.reference);
+      },
+      onClose: function () {},
+    });
+    handler.openIframe();
+  };
+
+  /* ---------------------------- Downloading -------------------------- */
+  const dialogPurchase = purchases.find((p) => p.id === dialogPurchaseId);
+
+  const openDialog = (purchaseId) => {
+    setDownloadNotice("");
+    setDialogPurchaseId(purchaseId);
+  };
+
+  const closeDialog = () => {
+    if (downloading) return;
+    setDialogPurchaseId(null);
+    setDownloadNotice("");
+  };
+
+  // One paid copy = one download. The server enforces this; the button is
+  // disabled afterwards so it can't even be clicked again.
+  const handleDownload = async (purchase) => {
+    if (downloading || purchase.downloaded) return;
+
+    try {
+      setDownloading(true);
+      const res = await authFetch(`/purchases/${purchase.id}/download`);
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Download failed");
+      }
+
+      const blob = await res.blob();
+      const ext = (blob.type.split("/")[1] || "png").replace("jpeg", "jpg");
+      const safeTitle =
+        purchase.title.replace(/[^a-z0-9-_ ]/gi, "").trim() || "artwork";
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${safeTitle}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      setDownloadNotice(
+        "Download started. This copy can't be downloaded again - buy it again to get another."
+      );
+      await loadAll();
+    } catch (err) {
+      alert(err.message);
+      await loadAll(); // re-sync (e.g. it was already downloaded elsewhere)
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   /* ------------------------------ Stats ------------------------------ */
   const totalEarnings = artworks.reduce((sum, art) => sum + art.price, 0);
   const activeArtworks = artworks.length;
@@ -253,8 +391,10 @@ export default function Dashboard({ user, onLogout }) {
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: FiHome },
+    { id: "marketplace", label: "Marketplace", icon: FiCompass },
     { id: "sell", label: "Sell Artwork", icon: FiPlus },
     { id: "artworks", label: "My Artworks", icon: FiPackage },
+    { id: "purchases", label: "My Purchases", icon: FiShoppingBag },
     { id: "profile", label: "Profile", icon: FiUser },
   ];
 
@@ -526,6 +666,12 @@ export default function Dashboard({ user, onLogout }) {
                     >
                       <FiPackage size={18} /> View My Artworks
                     </button>
+                    <button
+                      onClick={() => setActiveTab("marketplace")}
+                      className="w-full flex items-center gap-3 bg-sky-50 hover:bg-sky-100 text-sky-700 font-medium px-5 py-3 rounded-xl transition"
+                    >
+                      <FiCompass size={18} /> Browse Marketplace
+                    </button>
                   </div>
                 </div>
 
@@ -572,6 +718,66 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
               </div>
             </>
+          )}
+
+          {/* ================= MARKETPLACE TAB ================= */}
+          {activeTab === "marketplace" && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <FiCompass className="text-sky-600" />
+                  {searchQuery
+                    ? `Search results (${filteredMarketplace.length})`
+                    : `Marketplace (${marketplace.length})`}
+                </h2>
+              </div>
+
+              {loading ? (
+                <p className="text-center text-gray-400 py-16">Loading...</p>
+              ) : filteredMarketplace.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 mx-auto bg-sky-50 rounded-full flex items-center justify-center text-sky-500 mb-4">
+                    <FiImage size={28} />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-700">
+                    {searchQuery ? "No artworks found" : "Nothing here yet"}
+                  </h3>
+                  <p className="text-gray-500 text-sm mt-1">
+                    {searchQuery
+                      ? `No results for "${searchQuery}"`
+                      : "Artworks posted by other users will show up here."}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {filteredMarketplace.map((art) => (
+                    <ArtCard
+                      key={art.id}
+                      art={art}
+                      showSeller
+                      badge={art.purchaseId ? "Paid" : null}
+                    >
+                      {art.purchaseId ? (
+                        <button
+                          onClick={() => openDialog(art.purchaseId)}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-lg"
+                        >
+                          <FiDownload size={13} /> Download
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => payWithPaystack(art)}
+                          disabled={verifyingId === art.id}
+                          className="flex-1 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-xs font-semibold py-2 rounded-lg"
+                        >
+                          {verifyingId === art.id ? "Confirming..." : "Buy Now"}
+                        </button>
+                      )}
+                    </ArtCard>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {/* ================= SELL ARTWORK TAB ================= */}
@@ -723,6 +929,82 @@ export default function Dashboard({ user, onLogout }) {
                       >
                         <FiTrash2 size={13} /> Delete
                       </button>
+                    </ArtCard>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ================= MY PURCHASES TAB ================= */}
+          {activeTab === "purchases" && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <FiShoppingBag className="text-sky-600" />
+                  {searchQuery
+                    ? `Search results (${filteredPurchases.length})`
+                    : `My Purchases (${purchases.length})`}
+                </h2>
+              </div>
+
+              {loading ? (
+                <p className="text-center text-gray-400 py-16">Loading...</p>
+              ) : filteredPurchases.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 mx-auto bg-sky-50 rounded-full flex items-center justify-center text-sky-500 mb-4">
+                    <FiShoppingBag size={28} />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-700">
+                    {searchQuery ? "No purchases found" : "No purchases yet"}
+                  </h3>
+                  <p className="text-gray-500 text-sm mt-1">
+                    {searchQuery
+                      ? `No results for "${searchQuery}"`
+                      : "Artworks you buy will appear here."}
+                  </p>
+                  {!searchQuery && (
+                    <button
+                      onClick={() => setActiveTab("marketplace")}
+                      className="mt-5 inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white font-medium px-5 py-2.5 rounded-xl"
+                    >
+                      <FiCompass size={18} /> Browse Marketplace
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {filteredPurchases.map((p) => (
+                    <ArtCard
+                      key={p.id}
+                      art={p}
+                      showSeller
+                      badge={p.downloaded ? "Downloaded" : "Ready"}
+                    >
+                      {p.downloaded ? (
+                        <button
+                          onClick={() =>
+                            payWithPaystack({
+                              id: p.artworkId,
+                              price: p.price,
+                              title: p.title,
+                            })
+                          }
+                          disabled={verifyingId === p.artworkId}
+                          className="flex-1 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-xs font-semibold py-2 rounded-lg"
+                        >
+                          {verifyingId === p.artworkId
+                            ? "Confirming..."
+                            : "Buy again"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => openDialog(p.id)}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-lg"
+                        >
+                          <FiDownload size={13} /> Download
+                        </button>
+                      )}
                     </ArtCard>
                   ))}
                 </div>
@@ -888,6 +1170,90 @@ export default function Dashboard({ user, onLogout }) {
           )}
         </main>
       </div>
+
+      {/* ================= DOWNLOAD DIALOG ================= */}
+      {dialogPurchase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeDialog}
+          />
+
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <div className="min-w-0">
+                <h3 className="font-bold text-gray-900 truncate">
+                  {dialogPurchase.title}
+                </h3>
+                <p className="text-xs text-gray-500 truncate">
+                  by {dialogPurchase.seller}
+                </p>
+              </div>
+              <button
+                onClick={closeDialog}
+                disabled={downloading}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 disabled:opacity-50"
+              >
+                <FiX size={18} />
+              </button>
+            </div>
+
+            <div className="aspect-square bg-gray-100">
+              <ProtectedImage
+                src={dialogPurchase.image}
+                alt={dialogPurchase.title}
+              />
+            </div>
+
+            <div className="p-5">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => handleDownload(dialogPurchase)}
+                  disabled={dialogPurchase.downloaded || downloading}
+                  title={
+                    dialogPurchase.downloaded
+                      ? "Already downloaded"
+                      : "Download full-quality image"
+                  }
+                  className="w-12 h-12 flex-shrink-0 rounded-full bg-sky-600 hover:bg-sky-700 text-white flex items-center justify-center shadow disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed disabled:shadow-none transition"
+                >
+                  <FiDownload size={20} />
+                </button>
+
+                <div className="text-sm">
+                  {dialogPurchase.downloaded ? (
+                    <p className="text-gray-600">
+                      {downloadNotice ||
+                        "This copy has already been downloaded. Buy it again to download another copy."}
+                    </p>
+                  ) : (
+                    <p className="text-gray-600">
+                      {downloading
+                        ? "Preparing your download..."
+                        : "Payment confirmed. You can download the full-quality image once."}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {dialogPurchase.downloaded && (
+                <button
+                  onClick={() =>
+                    payWithPaystack({
+                      id: dialogPurchase.artworkId,
+                      price: dialogPurchase.price,
+                      title: dialogPurchase.title,
+                    })
+                  }
+                  className="mt-4 w-full bg-sky-50 hover:bg-sky-100 text-sky-700 text-sm font-semibold py-2.5 rounded-xl transition"
+                >
+                  Buy again - ₦{dialogPurchase.price.toLocaleString()}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================= LOGOUT CONFIRMATION MODAL ================= */}
       {showLogoutModal && (

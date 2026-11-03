@@ -1,0 +1,18 @@
+// Private original: Cloudinary gives it NO public URL
+original = await uploadBuffer(req.file.buffer, {
+  folder: "artvault/originals",
+  resource_type: "image",
+  type: "authenticated",   // <- this line makes it private
+});
+
+// Public preview: small, low quality and watermarked at upload time
+preview = await uploadBuffer(req.file.buffer, {
+  folder: "artvault/previews",
+  resource_type: "image",
+  type: "upload",
+  transformation: [
+    { width: 800, height: 800, crop: "limit", quality: "auto:low" },
+    { overlay: { font_family: "Arial", font_size: 64, font_weight: "bold", text: "ArtVault" },
+      color: "#ffffff", opacity: 45, gravity: "center" },
+  ],
+});
