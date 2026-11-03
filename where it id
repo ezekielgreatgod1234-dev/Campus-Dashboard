@@ -16,3 +16,8 @@ preview = await uploadBuffer(req.file.buffer, {
       color: "#ffffff", opacity: 45, gravity: "center" },
   ],
 });
+
+
+
+
+artwork.controller.js

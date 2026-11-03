@@ -581,7 +581,7 @@ export default function Dashboard({ user, onLogout }) {
             <>
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">
-                  Welcome back, {firstName} 👋
+                  Welcome back, {firstName}
                 </h2>
                 <p className="text-gray-500 mt-1">
                   Here's an overview of your art business.
