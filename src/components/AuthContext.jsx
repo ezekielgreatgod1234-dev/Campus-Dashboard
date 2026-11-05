@@ -18,17 +18,12 @@ export function AuthProvider({ children }) {
     localStorage.getItem(TOKEN_STORAGE_KEY)
   );
 
-  // "initializing" covers the one-time check on page load (do we have
-  // a valid stored token?). "loading" covers an in-flight login /
-  // register submission. Kept separate so ProtectedRoute only shows a
-  // full-page spinner during the initial check, not on every submit.
+  
   const [initializing, setInitializing] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // On mount (and whenever the token changes), verify it against the
-  // backend and rehydrate the logged-in user. This is what makes a
-  // page refresh keep you logged in instead of bouncing to /login.
+  
   useEffect(() => {
     let cancelled = false;
 

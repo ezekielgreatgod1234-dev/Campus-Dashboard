@@ -14,7 +14,7 @@ import {
 const countries = [
   "Nigeria", "Ghana", "Kenya", "South Africa", "United States", "United Kingdom",
   "Canada", "Germany", "France", "India", "China", "Brazil", "Australia",
-  // ... you can keep the full list if needed
+ 
 ];
 
 export default function Register({ onRegister, onLogin, loading, error }) {

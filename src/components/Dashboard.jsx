@@ -29,7 +29,7 @@ const API_URL =
   "http://localhost:5000";
 const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
 
-// Your login saves the JWT under the key "campusmart_token"
+
 const getToken = () => localStorage.getItem("campusmart_token");
 
 const authFetch = (path, options = {}) =>
@@ -52,12 +52,7 @@ const api = async (path, options = {}) => {
   return data;
 };
 
-/* ------------------------------------------------------------------ */
-/* Preview image: no right-click menu, no dragging. This is a deterrent */
-/* only - the real protection is that the browser only ever receives a */
-/* low-res watermarked preview. The full-res original is sent once,    */
-/* after payment, through the server.                                  */
-/* ------------------------------------------------------------------ */
+
 function ProtectedImage({ src, alt }) {
   return (
     <div
@@ -113,7 +108,7 @@ export default function Dashboard({ user, onLogout }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
-  // Artwork form
+ 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -121,20 +116,19 @@ export default function Dashboard({ user, onLogout }) {
   const [imagePreview, setImagePreview] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Data from the backend
-  const [artworks, setArtworks] = useState([]); // artworks I posted
-  const [marketplace, setMarketplace] = useState([]); // artworks by other users
-  const [purchases, setPurchases] = useState([]); // everything I've paid for
-  const [sales, setSales] = useState([]); // my artworks others bought
+  const [artworks, setArtworks] = useState([]); 
+  const [marketplace, setMarketplace] = useState([]); 
+  const [purchases, setPurchases] = useState([]); 
+  const [sales, setSales] = useState([]); 
   const [loading, setLoading] = useState(true);
 
-  // Buying / downloading
+
   const [verifyingId, setVerifyingId] = useState(null);
   const [dialogPurchaseId, setDialogPurchaseId] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState("");
 
-  // Profile editable state
+ 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profilePic, setProfilePic] = useState(null);
   const [profileData, setProfileData] = useState({
@@ -145,7 +139,7 @@ export default function Dashboard({ user, onLogout }) {
 
   const firstName = profileData.fullName?.split(" ")[0] || "there";
 
-  /* ----------------------------- Loading ----------------------------- */
+
   const loadAll = async () => {
     try {
       const [mine, market, bought, sold] = await Promise.all([
@@ -160,19 +154,18 @@ export default function Dashboard({ user, onLogout }) {
       setSales(sold.sales);
     } catch (err) {
       console.log(err);
-      if (err.status === 401) onLogout(); // token expired / invalid
+      if (err.status === 401) onLogout(); 
     } finally {
       setLoading(false);
     }
   };
 
-  // Runs on every page load / refresh so everything is still there
   useEffect(() => {
     loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, []);
 
-  // Load the Paystack popup script once (so you don't have to edit index.html)
+ 
   useEffect(() => {
     if (document.getElementById("paystack-inline-js")) return;
     const script = document.createElement("script");
@@ -182,7 +175,7 @@ export default function Dashboard({ user, onLogout }) {
     document.body.appendChild(script);
   }, []);
 
-  /* ----------------------------- Search ------------------------------ */
+  
   const matchesSearch = (art) => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return true;
@@ -207,7 +200,7 @@ export default function Dashboard({ user, onLogout }) {
     }
   };
 
-  /* ----------------------------- Images ------------------------------ */
+ 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -236,7 +229,7 @@ export default function Dashboard({ user, onLogout }) {
     }
   };
 
-  /* ---------------------------- Artworks ----------------------------- */
+
   const handleAddArtwork = async (e) => {
     e.preventDefault();
     if (!title || !description || !price || !imageFile) {
@@ -283,9 +276,7 @@ export default function Dashboard({ user, onLogout }) {
     setIsEditingProfile(false);
   };
 
-  /* ----------------------------- Payment ----------------------------- */
-  // After the Paystack popup succeeds we ask the backend to verify the payment.
-  // Only then is the purchase created and the download dialog opened.
+ 
   const confirmPurchase = async (artwork, reference) => {
     try {
       setVerifyingId(artwork.id);
@@ -317,7 +308,7 @@ export default function Dashboard({ user, onLogout }) {
     const handler = window.PaystackPop.setup({
       key: PAYSTACK_PUBLIC_KEY,
       email: profileData.email,
-      amount: artwork.price * 100, // Paystack uses kobo
+      amount: artwork.price * 100, 
       currency: "NGN",
       ref: "ARTVAULT_" + Date.now() + "_" + Math.floor(Math.random() * 1000000),
       metadata: { artworkId: artwork.id },
@@ -329,7 +320,7 @@ export default function Dashboard({ user, onLogout }) {
     handler.openIframe();
   };
 
-  /* ---------------------------- Downloading -------------------------- */
+
   const dialogPurchase = purchases.find((p) => p.id === dialogPurchaseId);
 
   const openDialog = (purchaseId) => {
@@ -343,8 +334,7 @@ export default function Dashboard({ user, onLogout }) {
     setDownloadNotice("");
   };
 
-  // One paid copy = one download. The server enforces this; the button is
-  // disabled afterwards so it can't even be clicked again.
+  
   const handleDownload = async (purchase) => {
     if (downloading || purchase.downloaded) return;
 
@@ -377,13 +367,13 @@ export default function Dashboard({ user, onLogout }) {
       await loadAll();
     } catch (err) {
       alert(err.message);
-      await loadAll(); // re-sync (e.g. it was already downloaded elsewhere)
+      await loadAll(); 
     } finally {
       setDownloading(false);
     }
   };
 
-  /* ------------------------------ Stats ------------------------------ */
+
   const totalEarnings = artworks.reduce((sum, art) => sum + art.price, 0);
   const activeArtworks = artworks.length;
   const totalSales = sales.length;

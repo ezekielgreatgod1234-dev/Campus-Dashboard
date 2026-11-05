@@ -14,12 +14,11 @@ import GuestRoute from "./components/GuestRoute";
 import Login from "./components/Login";
 import Register from "./components/Register";
 import Dashboard from "./components/Dashboard";
-
+import Landing from "./components/Landing";
 
 function LoginRoute() {
   const { login, loading, error, clearError } = useAuth();
   const navigate = useNavigate();
-
 
   useEffect(() => {
     clearError();
@@ -51,7 +50,6 @@ function RegisterRoute() {
   }, [clearError]);
 
   const handleRegister = async (payload) => {
-    
     if (payload?.error) {
       setError(payload.error);
       return;
@@ -88,7 +86,15 @@ function DashboardRoute() {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      {/* Landing page: guests see it, logged-in users are sent to /dashboard */}
+      <Route
+        path="/"
+        element={
+          <GuestRoute>
+            <Landing />
+          </GuestRoute>
+        }
+      />
 
       <Route
         path="/login"
